@@ -105,6 +105,7 @@ export OPENAI_API_KEY="your-api-key-here"
 > - deepseek
 > - xai
 > - groq
+> - lmstudio
 > - arceeai
 > - any other provider that is compatible with the OpenAI API
 >
@@ -473,6 +474,10 @@ export AZURE_OPENAI_API_VERSION="2025-03-01-preview" (Optional)
 
 # OpenRouter
 export OPENROUTER_API_KEY="your-openrouter-key-here"
+
+# LM Studio
+export LMSTUDIO_API_KEY="your-lmstudio-key-here"
+export LMSTUDIO_BASE_URL="http://localhost:1234/v1" (Optional)
 
 # Similarly for other providers
 ```

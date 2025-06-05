@@ -13,6 +13,13 @@ use std::env::VarError;
 use crate::error::EnvVarError;
 use crate::openai_api_key::get_openai_api_key;
 
+/// Default base URL for the LM Studio local server.
+pub const DEFAULT_LMSTUDIO_BASE: &str = "http://localhost:1234/v1";
+
+fn env_or(var: &str, default: &str) -> String {
+    std::env::var(var).unwrap_or_else(|_| default.to_string())
+}
+
 /// Wire protocol that the provider speaks. Most third-party services only
 /// implement the classic OpenAI Chat Completions JSON schema, whereas OpenAI
 /// itself (and a handful of others) additionally expose the more modern
@@ -162,6 +169,16 @@ pub fn built_in_model_providers() -> HashMap<String, ModelProviderInfo> {
                 env_key: Some("GROQ_API_KEY".into()),
                 env_key_instructions: None,
                 wire_api: WireApi::Chat,
+            },
+        ),
+        (
+            "lmstudio",
+            P {
+                name: "LM Studio".into(),
+                base_url: env_or("LMSTUDIO_BASE_URL", DEFAULT_LMSTUDIO_BASE),
+                env_key: Some("LMSTUDIO_API_KEY".into()),
+                env_key_instructions: None,
+                wire_api: WireApi::Responses,
             },
         ),
     ]

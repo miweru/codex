@@ -50,6 +50,16 @@ env_key = "OPENAI_API_KEY"
 wire_api = "responses"
 ```
 
+LM Studio is also bundled with the following defaults:
+
+```toml
+[model_providers.lmstudio]
+name = "LM Studio"
+base_url = "http://localhost:1234/v1" # overridable via $LMSTUDIO_BASE_URL
+env_key = "LMSTUDIO_API_KEY"
+wire_api = "responses"
+```
+
 ## model_providers
 
 This option lets you override and amend the default set of model providers bundled with Codex. This value is a map where the key is the value to use with `model_provider` to select the correspodning provider.
