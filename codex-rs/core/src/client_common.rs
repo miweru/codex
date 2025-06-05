@@ -29,6 +29,9 @@ pub struct Prompt {
     /// Whether to store response on server side (disable_response_storage = !store).
     pub store: bool,
 
+    /// Whether to request streaming responses.
+    pub stream: bool,
+
     /// Additional tools sourced from external MCP servers. Note each key is
     /// the "fully qualified" tool name (i.e., prefixed with the server name),
     /// which should be reported to the model in place of Tool::name.

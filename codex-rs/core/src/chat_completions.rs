@@ -34,6 +34,7 @@ pub(crate) async fn stream_chat_completions(
     model: &str,
     client: &reqwest::Client,
     provider: &ModelProviderInfo,
+    stream: bool,
 ) -> Result<ResponseStream> {
     // Build messages array
     let mut messages = Vec::<serde_json::Value>::new();
@@ -110,7 +111,7 @@ pub(crate) async fn stream_chat_completions(
     let payload = json!({
         "model": model,
         "messages": messages,
-        "stream": true,
+        "stream": stream,
         "tools": tools_json,
     });
 

@@ -12,4 +12,5 @@ pub struct ConfigProfile {
     pub model_provider: Option<String>,
     pub approval_policy: Option<AskForApproval>,
     pub disable_response_storage: Option<bool>,
+    pub stream: Option<bool>,
 }

@@ -15,8 +15,12 @@ pub struct Cli {
     #[arg(long, short = 'm')]
     pub model: Option<String>,
 
+    /// Provider to use for completions.
+    #[arg(long = "provider", short = 'p')]
+    pub provider: Option<String>,
+
     /// Configuration profile from config.toml to specify default options.
-    #[arg(long = "profile", short = 'p')]
+    #[arg(long = "profile", short = 'P')]
     pub config_profile: Option<String>,
 
     /// Convenience alias for low-friction sandboxed automatic execution (network-disabled sandbox that can write to cwd and TMPDIR)
@@ -33,6 +37,10 @@ pub struct Cli {
     /// Allow running Codex outside a Git repository.
     #[arg(long = "skip-git-repo-check", default_value_t = false)]
     pub skip_git_repo_check: bool,
+
+    /// Stream responses from the model (pass --no-stream to disable).
+    #[arg(long = "stream", default_value_t = true, action = clap::ArgAction::Set)]
+    pub stream: bool,
 
     #[clap(skip)]
     pub config_overrides: CliConfigOverrides,

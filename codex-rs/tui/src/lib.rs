@@ -63,9 +63,10 @@ pub fn run_main(cli: Cli, codex_linux_sandbox_exe: Option<PathBuf>) -> std::io::
             approval_policy,
             sandbox_policy,
             cwd: cli.cwd.clone().map(|p| p.canonicalize().unwrap_or(p)),
-            model_provider: None,
+            model_provider: cli.provider.clone(),
             config_profile: cli.config_profile.clone(),
             codex_linux_sandbox_exe,
+            stream: Some(cli.stream),
         };
         // Parse `-c` overrides from the CLI.
         let cli_kv_overrides = match cli.config_overrides.parse_overrides() {

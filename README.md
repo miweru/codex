@@ -416,6 +416,11 @@ Below is a comprehensive example of `config.json` with multiple custom providers
       "baseURL": "http://localhost:11434/v1",
       "envKey": "OLLAMA_API_KEY"
     },
+    "lmstudio": {
+      "name": "LM Studio",
+      "baseURL": "http://localhost:1234/v1",
+      "envKey": "LMSTUDIO_API_KEY"
+    },
     "mistral": {
       "name": "Mistral",
       "baseURL": "https://api.mistral.ai/v1",
@@ -474,8 +479,26 @@ export AZURE_OPENAI_API_VERSION="2025-03-01-preview" (Optional)
 # OpenRouter
 export OPENROUTER_API_KEY="your-openrouter-key-here"
 
+# LM Studio
+export LMSTUDIO_BASE_URL="http://localhost:1234/v1"  # optional
+export LMSTUDIO_API_KEY="dummy"
+
 # Similarly for other providers
 ```
+
+#### Quickstart LM Studio
+
+```bash
+# Start LM Studio locally (default port 1234)
+export LMSTUDIO_API_KEY=dummy
+cat > ~/.codex/config.toml <<'EOF'
+provider = "lmstudio"
+model = "<model-id>"
+EOF
+codex "hello"
+```
+
+Other providers remain optional via `--provider`.
 
 ---
 

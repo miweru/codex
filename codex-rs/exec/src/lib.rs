@@ -29,11 +29,13 @@ pub async fn run_main(cli: Cli, codex_linux_sandbox_exe: Option<PathBuf>) -> any
     let Cli {
         images,
         model,
+        provider,
         config_profile,
         full_auto,
         sandbox,
         cwd,
         skip_git_repo_check,
+        stream,
         color,
         last_message_file,
         prompt,
@@ -99,8 +101,9 @@ pub async fn run_main(cli: Cli, codex_linux_sandbox_exe: Option<PathBuf>) -> any
         approval_policy: Some(AskForApproval::Never),
         sandbox_policy,
         cwd: cwd.map(|p| p.canonicalize().unwrap_or(p)),
-        model_provider: None,
+        model_provider: provider,
         codex_linux_sandbox_exe,
+        stream: Some(stream),
     };
     // Parse `-c` overrides.
     let cli_kv_overrides = match config_overrides.parse_overrides() {

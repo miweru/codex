@@ -16,14 +16,33 @@ use crate::protocol::SandboxPolicy;
 use dirs::home_dir;
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::net::{TcpStream, ToSocketAddrs};
 use std::path::Path;
 use std::path::PathBuf;
+use std::time::Duration;
 use toml::Value as TomlValue;
+use url::Url;
 
 /// Maximum number of bytes of the documentation that will be embedded. Larger
 /// files are *silently truncated* to this size so we do not take up too much of
 /// the context window.
 pub(crate) const PROJECT_DOC_MAX_BYTES: usize = 32 * 1024; // 32 KiB
+
+fn lmstudio_is_running(base_url: &str) -> bool {
+    if let Ok(url) = Url::parse(base_url) {
+        if let Some(host) = url.host_str() {
+            let port = url.port_or_known_default().unwrap_or(80);
+            if let Ok(addrs) = (host, port).to_socket_addrs() {
+                for addr in addrs {
+                    if TcpStream::connect_timeout(&addr, Duration::from_millis(500)).is_ok() {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    false
+}
 
 /// Application configuration loaded from disk and merged with overrides.
 #[derive(Debug, Clone, PartialEq)]
@@ -48,6 +67,9 @@ pub struct Config {
     /// suppressed from the frontend output. This can reduce visual noise when
     /// users are only interested in the final agent responses.
     pub hide_agent_reasoning: bool,
+
+    /// Whether to request streaming responses from the model.
+    pub stream: bool,
 
     /// Disable server-side response storage (sends the full conversation
     /// context with every request). Currently necessary for OpenAI customers
@@ -292,6 +314,8 @@ pub struct ConfigToml {
     /// UI/output. Defaults to `false`.
     pub hide_agent_reasoning: Option<bool>,
 
+    pub stream: Option<bool>,
+
     pub model_reasoning_effort: Option<ReasoningEffort>,
     pub model_reasoning_summary: Option<ReasoningSummary>,
 }
@@ -332,6 +356,7 @@ pub struct ConfigOverrides {
     pub model_provider: Option<String>,
     pub config_profile: Option<String>,
     pub codex_linux_sandbox_exe: Option<PathBuf>,
+    pub stream: Option<bool>,
 }
 
 impl Config {
@@ -353,6 +378,7 @@ impl Config {
             model_provider,
             config_profile: config_profile_key,
             codex_linux_sandbox_exe,
+            stream,
         } = overrides;
 
         let config_profile = match config_profile_key.or(cfg.profile) {
@@ -390,10 +416,26 @@ impl Config {
             model_providers.entry(key).or_insert(provider);
         }
 
-        let model_provider_id = model_provider
+        let model_provider_id = match model_provider
             .or(config_profile.model_provider)
             .or(cfg.model_provider)
-            .unwrap_or_else(|| "openai".to_string());
+        {
+            Some(id) => id,
+            None => {
+                let base = std::env::var("LMSTUDIO_BASE_URL")
+                    .unwrap_or_else(|_| "http://localhost:1234/v1".into());
+                if lmstudio_is_running(&base) {
+                    "lmstudio".to_string()
+                } else {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        format!(
+                            "LM Studio not running on {base} — start it or pass --provider openai"
+                        ),
+                    ));
+                }
+            }
+        };
         let model_provider = model_providers
             .get(&model_provider_id)
             .ok_or_else(|| {
@@ -457,6 +499,10 @@ impl Config {
             codex_linux_sandbox_exe,
 
             hide_agent_reasoning: cfg.hide_agent_reasoning.unwrap_or(false),
+            stream: stream
+                .or(config_profile.stream)
+                .or(cfg.stream)
+                .unwrap_or(true),
             model_reasoning_effort: cfg.model_reasoning_effort.unwrap_or_default(),
             model_reasoning_summary: cfg.model_reasoning_summary.unwrap_or_default(),
         };
@@ -801,6 +847,7 @@ disable_response_storage = true
                 tui: Tui::default(),
                 codex_linux_sandbox_exe: None,
                 hide_agent_reasoning: false,
+                stream: true,
                 model_reasoning_effort: ReasoningEffort::default(),
                 model_reasoning_summary: ReasoningSummary::default(),
             },
@@ -843,6 +890,7 @@ disable_response_storage = true
             tui: Tui::default(),
             codex_linux_sandbox_exe: None,
             hide_agent_reasoning: false,
+            stream: true,
             model_reasoning_effort: ReasoningEffort::default(),
             model_reasoning_summary: ReasoningSummary::default(),
         };
@@ -900,6 +948,7 @@ disable_response_storage = true
             tui: Tui::default(),
             codex_linux_sandbox_exe: None,
             hide_agent_reasoning: false,
+            stream: true,
             model_reasoning_effort: ReasoningEffort::default(),
             model_reasoning_summary: ReasoningSummary::default(),
         };
