@@ -168,6 +168,7 @@ pub(crate) struct Session {
     client: ModelClient,
     tx_event: Sender<Event>,
     ctrl_c: Arc<Notify>,
+    stream: bool,
 
     /// The session's current working directory. All relative paths provided by
     /// the model as well as sandbox policies are resolved against this path
@@ -656,6 +657,7 @@ async fn submission_loop(
                     client,
                     tx_event: tx_event.clone(),
                     ctrl_c: Arc::clone(&ctrl_c),
+                    stream: config.stream,
                     instructions,
                     approval_policy,
                     sandbox_policy,
@@ -1009,6 +1011,7 @@ async fn run_turn(
         prev_id,
         user_instructions: sess.instructions.clone(),
         store,
+        stream: sess.stream,
         extra_tools,
     };
 

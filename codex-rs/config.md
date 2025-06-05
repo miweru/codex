@@ -40,6 +40,16 @@ base_url = "http://localhost:11434/v1"
 wire_api = "chat"
 ```
 
+If you have [LM Studio](https://lmstudio.ai) running locally, Codex includes a matching provider:
+
+```toml
+[model_providers.lmstudio]
+name = "LM Studio"
+base_url = "http://localhost:1234/v1"
+env_key = "LMSTUDIO_API_KEY"
+wire_api = "responses"
+```
+
 This option defaults to `"openai"` and the corresponding provider is defined as follows:
 
 ```toml

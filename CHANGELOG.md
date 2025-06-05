@@ -8,6 +8,7 @@ You can install any of these versions: `npm install -g codex@version`
 
 - Add node version check (#1007)
 - Persist token after refresh (#1006)
+- Add built-in LM Studio provider and `--provider` CLI flag in native CLI
 
 ## `0.1.2505171619`
 

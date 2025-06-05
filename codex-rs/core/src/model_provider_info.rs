@@ -125,6 +125,17 @@ pub fn built_in_model_providers() -> HashMap<String, ModelProviderInfo> {
             },
         ),
         (
+            "lmstudio",
+            P {
+                name: "LM Studio".into(),
+                base_url: std::env::var("LMSTUDIO_BASE_URL")
+                    .unwrap_or_else(|_| "http://localhost:1234/v1".into()),
+                env_key: Some("LMSTUDIO_API_KEY".into()),
+                env_key_instructions: None,
+                wire_api: WireApi::Responses,
+            },
+        ),
+        (
             "mistral",
             P {
                 name: "Mistral".into(),
