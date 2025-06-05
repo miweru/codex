@@ -1,0 +1,66 @@
+name: rust-cli-nightly
+
+on:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+jobs:
+  cli-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: clippy
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.8.1
+          run_install: false
+      - name: Install dependencies
+        run: pnpm install
+      - name: Build Node CLI
+        run: pnpm --filter @openai/codex run build
+      - name: cargo clippy
+        run: cargo clippy -- -D warnings
+        working-directory: codex-rs
+      - name: cargo test
+        run: cargo test
+        working-directory: codex-rs
+      - name: Build Rust CLI
+        run: cargo build --bin codex --release
+        working-directory: codex-rs
+      - name: Start stub server
+        run: |
+          python3 - <<'PY'
+          import http.server
+          import socketserver
+          import threading
+
+          class Handler(http.server.BaseHTTPRequestHandler):
+              def do_POST(self):
+                  if self.path == '/v1/chat/completions':
+                      self.send_response(200)
+                      self.send_header('Content-Type', 'text/event-stream')
+                      self.end_headers()
+                      self.wfile.write(b"event: response.output_item.done\n")
+                      self.wfile.write(b"data: {\"item\":{\"role\":\"assistant\",\"kind\":\"Message\",\"content\":[{\"kind\":\"output_text\",\"text\":\"hi\"}]}}\n\n")
+                      self.wfile.write(b"event: response.completed\n")
+                      self.wfile.write(b"data: {\"response\":{\"id\":\"1\"}}\n\n")
+                  else:
+                      self.send_response(404)
+                      self.end_headers()
+
+          server = socketserver.TCPServer(('127.0.0.1', 8000), Handler)
+          threading.Thread(target=server.serve_forever, daemon=True).start()
+          PY
+          sleep 1
+      - name: Run CLI
+        env:
+          LMSTUDIO_BASE_URL: http://localhost:8000
+          LMSTUDIO_API_KEY: dummy
+        run: node codex-cli/bin/codex.js --provider lmstudio --model dummy --skip-git-repo-check
