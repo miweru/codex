@@ -1,9 +1,6 @@
 import type { ParseEntry, ControlOperator } from "shell-quote";
 
-import {
-  identify_files_added,
-  identify_files_needed,
-} from "./utils/agent/apply-patch";
+import { identify_files_touched } from "./utils/agent/apply-patch";
 import * as path from "path";
 import { parse } from "shell-quote";
 
@@ -37,9 +34,10 @@ export type SafetyAssessment = {
     }
 );
 
-// TODO: This should also contain the paths that will be affected.
 export type ApplyPatchCommand = {
   patch: string;
+  /** Files referenced within the patch */
+  paths: Array<string>;
 };
 
 export type ApprovalPolicy =
@@ -172,6 +170,7 @@ function canAutoApproveApplyPatch(
   writableRoots: ReadonlyArray<string>,
   policy: ApprovalPolicy,
 ): SafetyAssessment {
+  const paths = identify_files_touched(applyPatchArg);
   switch (policy) {
     case "full-auto":
       // Continue to see if this can be auto-approved.
@@ -179,26 +178,20 @@ function canAutoApproveApplyPatch(
     case "suggest":
       return {
         type: "ask-user",
-        applyPatch: { patch: applyPatchArg },
+        applyPatch: { patch: applyPatchArg, paths },
       };
     case "auto-edit":
       // Continue to see if this can be auto-approved.
       break;
   }
 
-  if (
-    isWritePatchConstrainedToWritablePaths(
-      applyPatchArg,
-      workdir,
-      writableRoots,
-    )
-  ) {
+  if (isWritePatchConstrainedToWritablePaths(paths, workdir, writableRoots)) {
     return {
       type: "auto-approve",
       reason: "apply_patch command is constrained to writable paths",
       group: "Editing",
       runInSandbox: false,
-      applyPatch: { patch: applyPatchArg },
+      applyPatch: { patch: applyPatchArg, paths },
     };
   }
 
@@ -208,11 +201,11 @@ function canAutoApproveApplyPatch(
         reason: "Full auto mode",
         group: "Editing",
         runInSandbox: true,
-        applyPatch: { patch: applyPatchArg },
+        applyPatch: { patch: applyPatchArg, paths },
       }
     : {
         type: "ask-user",
-        applyPatch: { patch: applyPatchArg },
+        applyPatch: { patch: applyPatchArg, paths },
       };
 }
 
@@ -220,31 +213,14 @@ function canAutoApproveApplyPatch(
  * All items in `writablePaths` must be absolute paths.
  */
 function isWritePatchConstrainedToWritablePaths(
-  applyPatchArg: string,
+  paths: ReadonlyArray<string>,
   workdir: string | undefined,
   writableRoots: ReadonlyArray<string>,
 ): boolean {
-  // `identify_files_needed()` returns a list of files that will be modified or
-  // deleted by the patch, so all of them should already exist on disk. These
-  // candidate paths could be further canonicalized via fs.realpath(), though
-  // that does seem necessary and may even cause false negatives (assuming we
-  // allow writes in other directories that are symlinked from a writable path)
-  //
-  // By comparison, `identify_files_added()` returns a list of files that will
-  // be added by the patch, so they should NOT exist on disk yet and therefore
-  // using one with fs.realpath() should return an error.
-  return (
-    allPathsConstrainedTowritablePaths(
-      identify_files_needed(applyPatchArg),
-      workdir,
-      writableRoots,
-    ) &&
-    allPathsConstrainedTowritablePaths(
-      identify_files_added(applyPatchArg),
-      workdir,
-      writableRoots,
-    )
-  );
+  // `paths` is the union of modified, deleted, added and moved files extracted
+  // from the patch. We verify that every path falls under one of the allowed
+  // writable roots.
+  return allPathsConstrainedTowritablePaths(paths, workdir, writableRoots);
 }
 
 function allPathsConstrainedTowritablePaths(
