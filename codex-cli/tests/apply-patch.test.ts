@@ -5,6 +5,7 @@ import {
   DiffError,
   identify_files_added,
   identify_files_needed,
+  identify_files_touched,
   load_files,
   patch_to_commit,
   process_patch,
@@ -122,6 +123,19 @@ test("identify_files_needed & identify_files_added", () => {
     ["a.txt", "b.txt"].sort(),
   );
   expect(identify_files_added(patch)).toEqual(["c.txt"]);
+});
+
+test("identify_files_touched", () => {
+  const patch = `*** Begin Patch
+*** Update File: a.txt
+*** Move to: d.txt
+*** Delete File: b.txt
+*** Add File: c.txt
+*** End Patch`;
+
+  expect(new Set(identify_files_touched(patch))).toEqual(
+    new Set(["a.txt", "d.txt", "b.txt", "c.txt"]),
+  );
 });
 
 test("process_patch - update file with multiple chunks", () => {

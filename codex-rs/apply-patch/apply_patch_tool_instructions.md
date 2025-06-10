@@ -38,3 +38,4 @@ Note, then, that we do not use line numbers in this diff format, as the context 
 ```
 
 File references can only be relative, NEVER ABSOLUTE. After the apply_patch command is run, it will always say "Done!", regardless of whether the patch was successfully applied or not. However, you can determine if there are issue and errors by looking at any warnings or logging lines printed BEFORE the "Done!" is output.
+The CLI also extracts all file paths referenced in the patch, using them to validate that edits stay within allowed writable directories.
