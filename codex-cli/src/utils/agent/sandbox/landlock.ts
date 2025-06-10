@@ -94,7 +94,7 @@ async function detectSandboxExecutable(): Promise<string> {
   return candidate;
 }
 
-const ERROR_WHEN_LANDLOCK_NOT_SUPPORTED = `\
+export const ERROR_WHEN_LANDLOCK_NOT_SUPPORTED = `\
 The combination of seccomp/landlock that Codex uses for sandboxing is not
 supported in this environment.
 
@@ -157,6 +157,15 @@ function getSandboxExecutable(): Promise<string> {
   }
 
   return sandboxExecutablePromise;
+}
+
+/**
+ * Verify that the Landlock helper exists and is functional in this
+ * environment. Intended for upfront checks before attempting to
+ * use the sandbox.
+ */
+export async function ensureLandlockSupported(): Promise<void> {
+  await getSandboxExecutable();
 }
 
 /** @return name of the native executable to use for Linux sandboxing. */
