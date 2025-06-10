@@ -7,6 +7,7 @@
 //! `"<server><MCP_TOOL_NAME_DELIMITER><tool>"` as the key.
 
 use std::collections::HashMap;
+use std::sync::LazyLock;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -16,6 +17,7 @@ use codex_mcp_client::McpClient;
 use mcp_types::ClientCapabilities;
 use mcp_types::Implementation;
 use mcp_types::Tool;
+use regex_lite::Regex;
 use tokio::task::JoinSet;
 use tracing::info;
 
@@ -27,6 +29,10 @@ use crate::config_types::McpServerConfig;
 /// OpenAI requires tool names to conform to `^[a-zA-Z0-9_-]+$`, so we must
 /// choose a delimiter from this character set.
 const MCP_TOOL_NAME_DELIMITER: &str = "__OAI_CODEX_MCP__";
+
+/// Regular expression that valid server and tool names must match.
+static VALID_NAME_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[a-zA-Z0-9_-]+$").expect("compile name validation regex"));
 
 /// Timeout for the `tools/list` request.
 const LIST_TOOLS_TIMEOUT: Duration = Duration::from_secs(10);
@@ -45,6 +51,10 @@ pub(crate) fn try_parse_fully_qualified_tool_name(fq_name: &str) -> Option<(Stri
         return None;
     }
     Some((server.to_string(), tool.to_string()))
+}
+
+fn valid_name(name: &str) -> bool {
+    VALID_NAME_REGEX.is_match(name)
 }
 
 /// A thin wrapper around a set of running [`McpClient`] instances.
@@ -79,9 +89,16 @@ impl McpConnectionManager {
 
         // Launch all configured servers concurrently.
         let mut join_set = JoinSet::new();
+        let mut errors = ClientStartErrors::new();
 
         for (server_name, cfg) in mcp_servers {
-            // TODO: Verify server name: require `^[a-zA-Z0-9_-]+$`?
+            if !valid_name(&server_name) {
+                errors.insert(
+                    server_name,
+                    anyhow!("invalid server name; must match ^[a-zA-Z0-9_-]+$"),
+                );
+                continue;
+            }
             join_set.spawn(async move {
                 let McpServerConfig { command, args, env } = cfg;
                 let client_res = McpClient::new_stdio_client(command, args, env).await;
@@ -117,7 +134,6 @@ impl McpConnectionManager {
 
         let mut clients: HashMap<String, std::sync::Arc<McpClient>> =
             HashMap::with_capacity(join_set.len());
-        let mut errors = ClientStartErrors::new();
 
         while let Some(res) = join_set.join_next().await {
             let (server_name, client_res) = res?; // JoinError propagation
@@ -192,7 +208,13 @@ pub async fn list_all_tools(
         let list_result = list_result?;
 
         for tool in list_result.tools {
-            // TODO(mbolin): escape tool names that contain invalid characters.
+            if !valid_name(&tool.name) {
+                info!(
+                    "ignoring invalid tool name '{}' from server '{}'",
+                    tool.name, server_name
+                );
+                continue;
+            }
             let fq_name = fully_qualified_tool_name(&server_name, &tool.name);
             if aggregated.insert(fq_name.clone(), tool).is_some() {
                 panic!("tool name collision for '{fq_name}': suspicious");
@@ -207,4 +229,87 @@ pub async fn list_all_tools(
     );
 
     Ok(aggregated)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::File;
+    use std::io::Write;
+    use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn reject_invalid_server_name() {
+        let mut servers = HashMap::new();
+        servers.insert(
+            "bad name".to_string(),
+            McpServerConfig {
+                command: "true".into(),
+                args: vec![],
+                env: None,
+            },
+        );
+
+        let (mgr, errors) = McpConnectionManager::new(servers).await.unwrap();
+        assert!(mgr.list_all_tools().is_empty());
+        assert!(errors.contains_key("bad name"));
+    }
+
+    #[tokio::test]
+    async fn invalid_tool_name_filtered() {
+        // Create temp script that acts as a minimal MCP server returning an invalid tool name
+        let dir = TempDir::new().unwrap();
+        let script_path = dir.path().join("server.js");
+        let mut f = File::create(&script_path).unwrap();
+        let script = format!(
+            "const rl=require('readline').createInterface({{input:process.stdin}});\nrl.on('line',l=>{{let m=JSON.parse(l);if(m.method==='initialize'){{console.log(JSON.stringify({{jsonrpc:'2.0',id:m.id,result:{{capabilities:{{}},protocolVersion:'{}',serverInfo:{{name:'test',version:'0'}}}}}}));}}else if(m.method==='notifications/initialized'){{}}else if(m.method==='tools/list'){{console.log(JSON.stringify({{jsonrpc:'2.0',id:m.id,result:{{tools:[{{name:'bad tool!',inputSchema:{{type:'object'}}}}],next_cursor:null}}}}));}}}});",
+            mcp_types::MCP_SCHEMA_VERSION
+        );
+        f.write_all(script.as_bytes()).unwrap();
+        drop(f);
+
+        let mut servers = HashMap::new();
+        servers.insert(
+            "srv".to_string(),
+            McpServerConfig {
+                command: "node".into(),
+                args: vec![script_path.to_string_lossy().into()],
+                env: None,
+            },
+        );
+
+        let (mgr, errors) = McpConnectionManager::new(servers).await.unwrap();
+        println!("errors: {:?}", errors);
+        assert!(errors.is_empty());
+        let tools = mgr.list_all_tools();
+        assert!(tools.is_empty());
+    }
+
+    #[tokio::test]
+    #[should_panic]
+    async fn duplicate_tool_name_panics() {
+        // Server returns the same tool twice.
+        let dir = TempDir::new().unwrap();
+        let script_path = dir.path().join("server.js");
+        let mut f = File::create(&script_path).unwrap();
+        let script = format!(
+            "const rl=require('readline').createInterface({{input:process.stdin}});\nrl.on('line',l=>{{let m=JSON.parse(l);if(m.method==='initialize'){{console.log(JSON.stringify({{jsonrpc:'2.0',id:m.id,result:{{capabilities:{{}},protocolVersion:'{}',serverInfo:{{name:'test',version:'0'}}}}}}));}}else if(m.method==='notifications/initialized'){{}}else if(m.method==='tools/list'){{console.log(JSON.stringify({{jsonrpc:'2.0',id:m.id,result:{{tools:[{{name:'dup',inputSchema:{{type:'object'}}}},{{name:'dup',inputSchema:{{type:'object'}}}}],next_cursor:null}}}}));}}}});",
+            mcp_types::MCP_SCHEMA_VERSION
+        );
+        f.write_all(script.as_bytes()).unwrap();
+        drop(f);
+
+        let mut servers = HashMap::new();
+        servers.insert(
+            "srv".to_string(),
+            McpServerConfig {
+                command: "node".into(),
+                args: vec![script_path.to_string_lossy().into()],
+                env: None,
+            },
+        );
+
+        let (_mgr, errors) = McpConnectionManager::new(servers).await.unwrap();
+        println!("errors: {:?}", errors);
+    }
 }
