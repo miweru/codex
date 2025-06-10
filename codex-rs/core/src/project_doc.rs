@@ -149,8 +149,10 @@ mod tests {
     /// been configured.
     fn make_config(root: &TempDir, limit: usize, instructions: Option<&str>) -> Config {
         let codex_home = TempDir::new().unwrap();
+        let mut toml = ConfigToml::default();
+        toml.model_provider = Some("openai".into());
         let mut config = Config::load_from_base_config_with_overrides(
-            ConfigToml::default(),
+            toml,
             ConfigOverrides::default(),
             codex_home.path().to_path_buf(),
         )

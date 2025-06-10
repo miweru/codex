@@ -376,6 +376,19 @@ To disable this behavior, configure `[history]` as follows:
 persistence = "none"  # "save-all" is the default value
 ```
 
+The history section also supports optional trimming and filtering:
+
+```toml
+[history]
+max_bytes = 65536          # keep at most 64 KiB of history
+sensitive_patterns = ["secret", "password"]
+```
+
+When `max_bytes` is set, the history file will be trimmed after each write so the
+total size stays under the configured limit. The oldest entries are dropped first.
+Any entry whose text matches one of the regular expressions in
+`sensitive_patterns` is omitted entirely.
+
 ## file_opener
 
 Identifies the editor/URI scheme to use for hyperlinking citations in model output. If set, citations to files in the model output will be hyperlinked using the specified URI scheme so they can be ctrl/cmd-clicked from the terminal to open them.

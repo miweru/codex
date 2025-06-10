@@ -14,8 +14,10 @@ use codex_core::config::ConfigToml;
 /// temporary directory. Using a per-test directory keeps tests hermetic and
 /// avoids clobbering a developer’s real `~/.codex`.
 pub fn load_default_config_for_test(codex_home: &TempDir) -> Config {
+    let mut toml = ConfigToml::default();
+    toml.model_provider = Some("openai".into());
     Config::load_from_base_config_with_overrides(
-        ConfigToml::default(),
+        toml,
         ConfigOverrides::default(),
         codex_home.path().to_path_buf(),
     )

@@ -59,8 +59,12 @@ pub struct History {
     pub persistence: HistoryPersistence,
 
     /// If set, the maximum size of the history file in bytes.
-    /// TODO(mbolin): Not currently honored.
     pub max_bytes: Option<usize>,
+
+    /// If set, any history entry whose text matches one of these regular
+    /// expressions will be skipped.
+    #[serde(default)]
+    pub sensitive_patterns: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Debug, Copy, Clone, PartialEq, Default)]

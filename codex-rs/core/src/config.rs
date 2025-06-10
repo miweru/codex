@@ -668,6 +668,7 @@ persistence = "save-all"
             Some(History {
                 persistence: HistoryPersistence::SaveAll,
                 max_bytes: None,
+                sensitive_patterns: None,
             }),
             history_with_persistence_cfg.history
         );
@@ -684,6 +685,7 @@ persistence = "none"
             Some(History {
                 persistence: HistoryPersistence::None,
                 max_bytes: None,
+                sensitive_patterns: None,
             }),
             history_no_persistence_cfg.history
         );

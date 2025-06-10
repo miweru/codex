@@ -20,6 +20,7 @@ use std::io::Result;
 use std::io::Write;
 use std::path::PathBuf;
 
+use regex_lite::Regex;
 use serde::Deserialize;
 use serde::Serialize;
 use std::time::Duration;
@@ -68,7 +69,20 @@ pub(crate) async fn append_entry(text: &str, session_id: &Uuid, config: &Config)
         }
     }
 
-    // TODO: check `text` for sensitive patterns
+    if let Some(patterns) = &config.history.sensitive_patterns {
+        for pat in patterns {
+            match Regex::new(pat) {
+                Ok(re) => {
+                    if re.is_match(text) {
+                        return Ok(());
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, pattern = %pat, "invalid sensitive regex");
+                }
+            }
+        }
+    }
 
     // Resolve `~/.codex/history.jsonl` and ensure the parent directory exists.
     let path = history_filepath(config);
@@ -92,9 +106,9 @@ pub(crate) async fn append_entry(text: &str, session_id: &Uuid, config: &Config)
         .map_err(|e| std::io::Error::other(format!("failed to serialise history entry: {e}")))?;
     line.push('\n');
 
-    // Open in append-only mode.
+    // Open the history file for reading and writing.
     let mut options = OpenOptions::new();
-    options.append(true).read(true).create(true);
+    options.read(true).write(true).create(true);
     #[cfg(unix)]
     {
         options.mode(0o600);
@@ -111,8 +125,45 @@ pub(crate) async fn append_entry(text: &str, session_id: &Uuid, config: &Config)
     // We use sync I/O with spawn_blocking() because we are using a
     // [`std::fs::File`] instead of a [`tokio::fs::File`] to leverage an
     // advisory file locking API that is not available in the async API.
+    let max_bytes = config.history.max_bytes;
+    let line_bytes = line.into_bytes();
+
     tokio::task::spawn_blocking(move || -> Result<()> {
-        history_file.write_all(line.as_bytes())?;
+        use std::io::{Read, Seek, SeekFrom};
+
+        if let Some(limit) = max_bytes {
+            history_file.seek(SeekFrom::Start(0))?;
+            let mut data = Vec::new();
+            history_file.read_to_end(&mut data)?;
+            data.extend_from_slice(&line_bytes);
+
+            if data.len() > limit {
+                let mut start = 0usize;
+                while data.len() - start > limit {
+                    match data[start..].iter().position(|&b| b == b'\n') {
+                        Some(pos) => start += pos + 1,
+                        None => {
+                            start = data.len() - limit;
+                            break;
+                        }
+                    }
+                }
+                let trimmed = &data[start..];
+                history_file.set_len(0)?;
+                history_file.seek(SeekFrom::Start(0))?;
+                history_file.write_all(trimmed)?;
+                history_file.flush()?;
+                return Ok(());
+            }
+
+            history_file.seek(SeekFrom::End(0))?;
+            history_file.write_all(&line_bytes)?;
+            history_file.flush()?;
+            return Ok(());
+        }
+
+        history_file.seek(SeekFrom::End(0))?;
+        history_file.write_all(&line_bytes)?;
         history_file.flush()?;
         Ok(())
     })
@@ -294,4 +345,71 @@ async fn ensure_owner_only_permissions(file: &File) -> Result<()> {
 async fn ensure_owner_only_permissions(_file: &File) -> Result<()> {
     // For now, on non-Unix, simply succeed.
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+    use crate::config::ConfigOverrides;
+    use crate::config::ConfigToml;
+    use tempfile::TempDir;
+
+    fn load_default_config_for_test(codex_home: &TempDir) -> Config {
+        let toml = {
+            let mut t = ConfigToml::default();
+            t.model_provider = Some("openai".into());
+            t
+        };
+        Config::load_from_base_config_with_overrides(
+            toml,
+            ConfigOverrides::default(),
+            codex_home.path().to_path_buf(),
+        )
+        .expect("defaults for test should always succeed")
+    }
+
+    #[tokio::test]
+    async fn trims_history_to_limit() {
+        let dir = TempDir::new().unwrap();
+        let mut config = load_default_config_for_test(&dir);
+        config.history.max_bytes = Some(100);
+        let id = Uuid::new_v4();
+
+        append_entry("first", &id, &config).await.unwrap();
+        append_entry("second", &id, &config).await.unwrap();
+        append_entry("third", &id, &config).await.unwrap();
+
+        let data = tokio::fs::read_to_string(dir.path().join(HISTORY_FILENAME))
+            .await
+            .unwrap();
+        assert!(data.len() <= 100);
+        let lines: Vec<HistoryEntry> = data
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+        assert_eq!(1, lines.len());
+        assert_eq!("third", lines[0].text);
+    }
+
+    #[tokio::test]
+    async fn filters_sensitive_text() {
+        let dir = TempDir::new().unwrap();
+        let mut config = load_default_config_for_test(&dir);
+        config.history.sensitive_patterns = Some(vec!["secret".into()]);
+        let id = Uuid::new_v4();
+
+        append_entry("this is secret", &id, &config).await.unwrap();
+        append_entry("ok", &id, &config).await.unwrap();
+
+        let data = tokio::fs::read_to_string(dir.path().join(HISTORY_FILENAME))
+            .await
+            .unwrap();
+        let lines: Vec<HistoryEntry> = data
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+        assert_eq!(1, lines.len());
+        assert_eq!("ok", lines[0].text);
+    }
 }
